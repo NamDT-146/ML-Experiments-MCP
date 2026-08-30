@@ -1,0 +1,6 @@
+---
+description: AiAuN MCP experiment orchestration — ask-first Kaggle runs
+alwaysApply: true
+---
+
+When running experiments on Kaggle via AiAuN MCP: ask for missing data dir / code version / config; never embed API keys or Drive SA JSON in kernels (Kaggle User Secrets); kernel uploads artifacts to a Shared Drive; poll status/logs; always show tracking.kaggle_kernel, tracking.wandb_project, tracking.drive_folder to the user.

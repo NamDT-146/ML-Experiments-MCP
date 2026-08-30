@@ -1,0 +1,7 @@
+I want to re-design the experiment system, that we will have a server but often be full. So we tend to store code on github (already), put data to kaggle to use the compute it offer, manage experiments by the API key to the project on WandB, and store kind of artifact to a huge Google Drive. Most important it should all be manage by group supported by listed platform (Google Drive is not needed, we dont have google drive org yet)
+
+Moreover, i want to build an MCP on it. Final goal is, it will ask agent to provide the data dir, the associate code version, the config they want to run (should better be config files) then automatically support the agents to check if the dataset is on kaggle or not yet, then upload through kaggle access key, ask for a notebook file of full experiment script (which clone the git repo, check to correct branch and run by GPU given by kaggle). It listen to the log back and send to agents so that it know the stage of running for debugging or other needed. User are required to set up these kind of key with there mcp.
+
+Can you make a more complete description of our mcp, ask well list of supported API, and required key, as well how each API will work when trggered (action usecase flow)
+
+Comrehensive and detail, i want a standard yet local-light dependent
