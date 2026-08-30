@@ -27,6 +27,19 @@ The agent should call `resolve_experiment_request`, then **ask** for anything mi
 - Google Drive org / GitHub write
 - Blocking multi-hour monitor in one tool call
 
+## Next phase (known gap)
+
+Kernel-side Drive upload can still fail on Kaggle with
+`ConnectionError('Connection error trying to communicate with service.')`
+even with `static_discovery=True`, `num_retries=5`, and per-experiment folders.
+Training/inference may complete; artifacts stay on Kaggle Output until the host
+calls `kaggle_kernel_output_to_drive` (verified: log, `metrics.json`,
+`predictions.json`, `best.pt` into `<root>/<kernel-slug>/run/`).
+
+Phase-2 work: make in-kernel Drive reliable without requiring the PC (retry/backoff
+after training, alternate transport, or deferred upload), so users can power off
+during long GPU jobs and still land artifacts on Drive.
+
 ## Tools
 
 | Tool | When |

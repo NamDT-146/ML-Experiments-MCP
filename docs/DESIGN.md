@@ -41,3 +41,4 @@ The server redacts known secret values from error strings. Kernel `script_conten
 4. Generate script: Kaggle Secrets for git/W&B; or smoke script with no clone.
 5. `kaggle_kernel_push` (internet; GPU only when requested).
 6. Poll status/logs. Kernel should push artifacts to Drive via User Secrets. MCP backup: `kaggle_kernel_output_to_drive` (SSH, no browser).
+7. **Known gap:** Kaggle→Drive from the kernel may still hit `ConnectionError` to Google; host backup is the verified path until phase 2 hardens in-kernel upload.
