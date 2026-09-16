@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import time
 from pathlib import Path
 
 
@@ -58,6 +60,7 @@ def write_kernel_metadata(
     enable_gpu: bool = False,
     enable_internet: bool = True,
     is_private: bool = True,
+    machine_shape: str = "",
 ) -> Path:
     if "/" not in owner_slug:
         raise ValueError("kernel id must be owner/slug")
@@ -74,12 +77,46 @@ def write_kernel_metadata(
         "competition_sources": [],
         "kernel_sources": [],
     }
-    # enable_gpu alone often schedules P100 (sm_60). Current Kaggle PyTorch
-    # only ships sm_70+, so GPU smoke must request T4.
+    # When GPU is enabled, explicitly request T4 unless overridden.
+    # enable_gpu alone often schedules P100 (sm_60); current Kaggle PyTorch
+    # only ships sm_70+.
     if enable_gpu:
-        meta["machine_shape"] = "NvidiaTeslaT4"
+        meta["machine_shape"] = machine_shape.strip() or "NvidiaTeslaT4"
     path = folder / "kernel-metadata.json"
     path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    return path
+
+
+def content_hash(folder: Path) -> str:
+    """SHA-256 of sorted relative-path:size pairs (fast, not content)."""
+    h = hashlib.sha256()
+    entries = sorted(
+        (str(p.relative_to(folder)).replace("\\", "/"), p.stat().st_size)
+        for p in folder.rglob("*")
+        if p.is_file() and p.name != "aiaun_manifest.json"
+    )
+    for name, size in entries:
+        h.update(f"{name}:{size}\n".encode())
+    return h.hexdigest()[:16]
+
+
+def write_aiaun_manifest(
+    folder: Path,
+    *,
+    required_paths: list[str] | None = None,
+    git_sha: str = "",
+    source_dir: str = "",
+) -> Path:
+    """Write aiaun_manifest.json into folder after a dataset push."""
+    manifest = {
+        "pushed_at": int(time.time()),
+        "content_hash": content_hash(folder),
+        "git_sha": git_sha,
+        "source_dir": source_dir,
+        "required_paths": required_paths or [],
+    }
+    path = folder / "aiaun_manifest.json"
+    path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return path
 
 

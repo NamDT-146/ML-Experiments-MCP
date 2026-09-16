@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from aiaun_mcp.runtime_env import KERNEL_ENV_LOADER
+
 # Inlined on Kaggle (no aiaun_mcp import). Placeholders: {kernel_slug}
 KERNEL_DRIVE_HELPER = r'''
 def get_or_create_experiment_folder(drive_service, parent_id, folder_name):
@@ -34,12 +36,25 @@ def get_or_create_experiment_folder(drive_service, parent_id, folder_name):
 
 
 def drive_push(folder_files):
-    from kaggle_secrets import UserSecretsClient
-    us = UserSecretsClient()
-    raw = us.get_secret("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON")
-    root_id = us.get_secret("GOOGLE_DRIVE_FOLDER_ID")
-    info = json.loads(raw)
-    del raw
+    import json as _djson, os as _dos
+    # Prefer os.environ (set by _load_aiaun_env), fall back to User Secrets
+    sa_raw = _dos.environ.get("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "")
+    root_id = _dos.environ.get("GOOGLE_DRIVE_FOLDER_ID", "")
+    if not sa_raw or not root_id:
+        try:
+            from kaggle_secrets import UserSecretsClient
+            _us = UserSecretsClient()
+            if not sa_raw:
+                sa_raw = _us.get_secret("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON")
+            if not root_id:
+                root_id = _us.get_secret("GOOGLE_DRIVE_FOLDER_ID")
+        except Exception:
+            pass
+    if not sa_raw or not root_id:
+        print("DRIVE_SKIP no Drive credentials available", flush=True)
+        return
+    info = _djson.loads(sa_raw)
+    del sa_raw
     try:
         from google.oauth2 import service_account
         from googleapiclient.discovery import build
@@ -86,6 +101,7 @@ import os
 from collections import defaultdict
 from pathlib import Path
 
+{env_loader}
 INPUT = Path("/kaggle/input")
 print("inputs:", sorted(p.name for p in INPUT.iterdir()) if INPUT.exists() else "missing", flush=True)
 
@@ -163,7 +179,8 @@ print("DONE", flush=True)
 
 def _fill_script(src: str, *, dataset_slug: str, kernel_slug: str) -> str:
     return (
-        src.replace("{drive_helper}", KERNEL_DRIVE_HELPER)
+        src.replace("{env_loader}", KERNEL_ENV_LOADER)
+        .replace("{drive_helper}", KERNEL_DRIVE_HELPER)
         .replace("{dataset_slug}", dataset_slug)
         .replace("{kernel_slug}", kernel_slug.replace("/", "_"))
     )
@@ -186,6 +203,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+{env_loader}
 
 def _ensure_cuda_torch() -> None:
     """Kaggle default GPU is often P100 (sm_60). Image torch is sm_70+ only."""

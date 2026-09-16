@@ -9,10 +9,12 @@ from mcp.server.mcpserver import MCPServer
 from aiaun_mcp.config import ConfigError, get_settings
 from aiaun_mcp.drive_ops import folder_info as drive_folder_info_impl
 from aiaun_mcp.drive_ops import upload_file as drive_upload_impl
+from aiaun_mcp.experiment import preflight_experiment as preflight_impl
 from aiaun_mcp.experiment import resolve_experiment_request as resolve_req
 from aiaun_mcp.fsutil import inspect_local_dir as inspect_impl
 from aiaun_mcp.fsutil import list_repo_configs as list_configs_impl
 from aiaun_mcp.kaggle_ops import (
+    classify_kernel_failure as classify_impl,
     dataset_exists,
     dataset_push,
     kernel_logs,
@@ -20,6 +22,7 @@ from aiaun_mcp.kaggle_ops import (
     kernel_push,
     kernel_status,
 )
+from aiaun_mcp.runtime_env import runtime_env_dataset_push as env_push_impl
 from aiaun_mcp.templates import (
     GENERATE_NOTEBOOK_PROMPT,
     RUN_KAGGLE_EXPERIMENT_PROMPT,
@@ -27,12 +30,17 @@ from aiaun_mcp.templates import (
     resnet50_smoke_script,
     smoke_script,
 )
+from aiaun_mcp.wandb_ops import wandb_run_lookup as wandb_lookup_impl
 
 app = MCPServer("aiaun")
 
 
 def _json(payload: Any) -> str:
     return json.dumps(payload, indent=2, default=str)
+
+
+def _load_json_arg(s: str) -> Any:
+    return json.loads(s)
 
 
 @app.tool()
@@ -98,14 +106,76 @@ def kaggle_dataset_push(
 
 
 @app.tool()
+def runtime_env_dataset_push() -> str:
+    """
+    Pack WANDB_API_KEY, GITHUB_TOKEN, and Drive credentials from .env into a tiny
+    private Kaggle dataset (aiaun-run-env). Attach the returned dataset_slug to
+    kaggle_kernel_push so API auto-runs can authenticate without UI User Secrets.
+    """
+    try:
+        return _json(env_push_impl(get_settings()))
+    except ConfigError as exc:
+        return _json({"ok": False, "error": str(exc)})
+
+
+@app.tool()
+def preflight_experiment(
+    data_dir_or_kaggle_slug: str = "",
+    code_version: str = "",
+    config_path: str = "",
+    github_repo: str = "",
+    required_dataset_paths: str = "",
+) -> str:
+    """
+    Pre-push sanity check: validates experiment fields, .env keys, and dataset content.
+
+    required_dataset_paths: JSON string mapping dataset slug to list of required paths,
+    e.g. '{"namdtgk14/semi-m2f-real-code": ["mask2former", "splits/voc_hetero_seed42.json"]}'.
+    Leave empty to skip dataset content check.
+    """
+    try:
+        parsed_paths: dict = {}
+        if required_dataset_paths.strip():
+            try:
+                parsed_paths = _load_json_arg(required_dataset_paths)
+            except Exception:
+                return _json({"ok": False, "error": "required_dataset_paths must be valid JSON"})
+        return _json(
+            preflight_impl(
+                settings=get_settings(),
+                data_dir_or_kaggle_slug=data_dir_or_kaggle_slug,
+                code_version=code_version,
+                config_path=config_path,
+                github_repo=github_repo,
+                required_dataset_paths=parsed_paths or None,
+            )
+        )
+    except ConfigError as exc:
+        return _json({"ok": False, "error": str(exc)})
+
+
+@app.tool()
 def kaggle_kernel_push(
     kernel_slug: str,
     script_content: str,
     dataset_slugs: str,
     title: str,
     enable_gpu: bool = False,
+    machine_shape: str = "",
+    run_mode: str = "auto",
 ) -> str:
-    """Push a Kaggle script kernel. dataset_slugs is a comma-separated owner/slug list."""
+    """
+    Push a Kaggle script kernel.
+
+    dataset_slugs: comma-separated owner/slug list. Include the aiaun-run-env slug
+    here to pass secrets without UI User Secrets.
+
+    machine_shape: accelerator override (default NvidiaTeslaT4 when enable_gpu=True).
+    Other options: NvidiaTeslaT4Highmem, NvidiaTeslaA100, NvidiaL4, NvidiaH100.
+
+    run_mode: 'auto' (push immediately) or 'draft' (write files only, return UI URL).
+    Use 'draft' when the kernel needs User Secrets attached via the Kaggle UI first.
+    """
     if kernel_source_has_secrets(script_content):
         return _json(
             {"ok": False, "error": "refusing to push script that looks like it contains secrets"}
@@ -120,6 +190,8 @@ def kaggle_kernel_push(
                 dataset_slugs=slugs,
                 title=title,
                 enable_gpu=enable_gpu,
+                machine_shape=machine_shape,
+                run_mode=run_mode,
             )
         )
     except ConfigError as exc:
@@ -137,9 +209,36 @@ def kaggle_kernel_status(kernel_slug: str) -> str:
 
 @app.tool()
 def kaggle_kernel_logs(kernel_slug: str) -> str:
-    """Fetch kernel output logs (often only after complete)."""
+    """
+    Fetch filtered kernel output logs. Prioritises main *.log and
+    artifacts/*_train.log; skips vendor trees; caps each file tail.
+    Often only available after the kernel finishes.
+    """
     try:
         return _json(kernel_logs(get_settings(), kernel_slug))
+    except ConfigError as exc:
+        return _json({"ok": False, "error": str(exc)})
+
+
+@app.tool()
+def classify_kernel_failure(log_text: str) -> str:
+    """
+    Classify a kernel ERROR from log text. Returns error_class, matched lines,
+    and a remediation hint. Useful when kaggle_kernel_status returns ERROR and
+    failureMessage is null.
+    """
+    return _json(classify_impl(log_text))
+
+
+@app.tool()
+def wandb_run_lookup(run_name: str = "", run_id: str = "") -> str:
+    """
+    Look up recent W&B runs for the configured entity/project. Fill
+    tracking.wandb_run after a kernel completes. Optionally filter by
+    run_name or run_id. Uses urllib only — no wandb SDK needed locally.
+    """
+    try:
+        return _json(wandb_lookup_impl(get_settings(), run_name=run_name, run_id=run_id))
     except ConfigError as exc:
         return _json({"ok": False, "error": str(exc)})
 

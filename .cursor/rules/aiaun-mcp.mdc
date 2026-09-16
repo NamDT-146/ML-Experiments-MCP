@@ -3,4 +3,4 @@ description: AiAuN MCP experiment orchestration — ask-first Kaggle runs
 alwaysApply: true
 ---
 
-When running experiments on Kaggle via AiAuN MCP: ask for missing data dir / code version / config; never embed API keys or Drive SA JSON in kernels (Kaggle User Secrets); kernel uploads artifacts to a Shared Drive; poll status/logs; always show tracking.kaggle_kernel, tracking.wandb_project, tracking.drive_folder to the user.
+When running experiments on Kaggle via AiAuN MCP: ask for missing data dir / code version / config; never embed API keys or Drive SA JSON in kernels; use runtime_env_dataset_push to pass secrets on API auto-runs (or run_mode=draft for UI secrets); call preflight_experiment before push; use machine_shape for T4/A100; resolve real slug from push response; classify ERROR with classify_kernel_failure; fill wandb_run via wandb_run_lookup after COMPLETE; always show tracking.kaggle_kernel, tracking.wandb_project, tracking.drive_folder to the user.

@@ -6,18 +6,21 @@ Example user prompt:
 
 The agent should call `resolve_experiment_request`, then **ask** for anything missing (data dir or existing Kaggle slug, code version / branch, which YAML). It must not pick among several coco teacher-student configs silently (`list_repo_configs`).
 
-## Features supported (phase 1)
+## Features supported (phase 2)
 
 - Inspect local data dir (count, bytes, samples)
 - Check / push Kaggle datasets (no AiAuN size cap; Kaggle API may still reject)
-- Push Kaggle **script** kernels (CPU smoke or GPU), internet on
-- Poll kernel status and fetch logs (logs often appear only after complete)
-- List `semi-mask2former/configs/**/*.yaml`
-- Ask-first experiment resolver
-- Kernel uploads `/kaggle/working/artifacts` to Drive via Kaggle User Secrets (login-less SA), under `<GOOGLE_DRIVE_FOLDER_ID>/<kernel-slug>/<version-or-run>/`
-- Host backup: `kaggle_kernel_output_to_drive` (SSH, no browser)
+- **Private runtime-env dataset** (`runtime_env_dataset_push`): packs WANDB/GITHUB/Drive keys from `.env` as a private dataset attached to the kernel — unblocks API auto-runs without UI User Secrets
+- **Preflight check** (`preflight_experiment`): validates experiment fields, .env keys, and required file paths in attached datasets before push
+- Push Kaggle **script** kernels: `run_mode=auto|draft`, explicit `machine_shape` (T4/A100/etc.), slug resolved after push
+- Filtered log fetch: main `*.log` and `artifacts/*_train.log` first; no vendor tree download
+- **Error classifier** (`classify_kernel_failure`): maps FATAL log lines to `MISSING_SECRET`, `WRONG_ACCELERATOR`, `MODULE_NOT_FOUND`, `FILE_NOT_FOUND`, etc. with remediation hint
+- **W&B run lookup** (`wandb_run_lookup`): fills `tracking.wandb_run` after COMPLETE using urllib (no SDK)
+- Per-experiment Drive folder `<root>/<kernel-slug>/<run>/`; `static_discovery=True`, `num_retries=5`
+- Host backup: `kaggle_kernel_output_to_drive` (SSH, no browser) — call explicitly when kernel Drive fails
+- Dataset content manifest (`aiaun_manifest.json`) written at push time for freshness checks
 - Shared Drive folder (SA cannot write My Drive)
-- Personal owner mode; org via `AIAUN_OWNER_MODE` (tested, not default)
+- Personal owner mode; org via `AIAUN_OWNER_MODE`
 - Synthetic color-class smoke dataset + inlined smoke script
 
 ## Not in phase 1
@@ -27,33 +30,37 @@ The agent should call `resolve_experiment_request`, then **ask** for anything mi
 - Google Drive org / GitHub write
 - Blocking multi-hour monitor in one tool call
 
-## Next phase (known gap)
+## Known gaps (phase 2)
 
-Kernel-side Drive upload can still fail on Kaggle with
-`ConnectionError('Connection error trying to communicate with service.')`
-even with `static_discovery=True`, `num_retries=5`, and per-experiment folders.
-Training/inference may complete; artifacts stay on Kaggle Output until the host
-calls `kaggle_kernel_output_to_drive` (verified: log, `metrics.json`,
-`predictions.json`, `best.pt` into `<root>/<kernel-slug>/run/`).
+**Kernel-side Drive `ConnectionError`:** Kaggle→Google Drive can still fail with
+`ConnectionError` even with `static_discovery=True` and `num_retries=5`.
+Artifacts stay on Kaggle Output; the kernel prints `DRIVE_SKIP … repr(e)` with
+the full exception. Host backup (`kaggle_kernel_output_to_drive`) is the verified
+path. Call it explicitly; the agent does not fall back silently.
 
-Phase-2 work: make in-kernel Drive reliable without requiring the PC (retry/backoff
-after training, alternate transport, or deferred upload), so users can power off
-during long GPU jobs and still land artifacts on Drive.
+**Phase-3 target:** deferred or retry-loop Drive upload from the kernel after
+training finishes, so the PC can stay off.
 
 ## Tools
 
 | Tool | When |
 |------|------|
 | `resolve_experiment_request` | First; ask if `missing` is set |
+| `preflight_experiment` | Before push; validates fields, keys, dataset paths |
+| `runtime_env_dataset_push` | Pack .env secrets into private Kaggle dataset for API auto-runs |
 | `inspect_local_dir` | Local data path |
 | `list_repo_configs` | Ambiguous setting name |
 | `kaggle_dataset_check` | `owner/slug` or slug (owner from `.env`) |
 | `kaggle_dataset_push` | Only if missing; no AiAuN size cap |
 | `aiaun_smoke_script` | CPU color prototype smoke |
+| `aiaun_resnet50_gpu_smoke_script` | GPU ResNet50 smoke (T4) |
 | `experiment_tracking_links` | Kaggle + W&B + Drive URLs to show the user |
-| `kaggle_kernel_push` | After script is ready |
-| `kaggle_kernel_status` / `kaggle_kernel_logs` | Agent loop |
-| `kaggle_kernel_output_to_drive` | After kernel complete; host-side backup |
+| `kaggle_kernel_push` | `run_mode`, `machine_shape`, `dataset_slugs` incl. env pack |
+| `kaggle_kernel_status` | Poll; returns RUNNING / COMPLETE / ERROR |
+| `kaggle_kernel_logs` | Filtered logs (main + artifacts); after COMPLETE preferred |
+| `classify_kernel_failure` | Paste log text; returns error class + remediation |
+| `wandb_run_lookup` | Fill `tracking.wandb_run` after COMPLETE |
+| `kaggle_kernel_output_to_drive` | Host-side backup; call only when user accepts |
 | `drive_folder_info` / `drive_upload_file` | Local SA; Shared Drive |
 
 Prompts: `run_kaggle_experiment`, `generate_experiment_notebook`.
