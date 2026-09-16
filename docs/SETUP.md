@@ -29,7 +29,23 @@ AIAUN_LIVE_TEST=1 "$(tr -d '\r' < .aiaun-python)" -m pytest tests/acceptance -m 
 
 ## Keys (`.env`)
 
-Copy `.env.example` to `.env`. Never commit `.env` or `.secret/`.
+Copy `.env.example` to `.env`. Never commit `.env`, `.env.*`, `envs/*.env`, or `.secret/`.
+
+The MCP **host** always loads the default `.env` for local Kaggle API auth.
+
+### Per-codebase env files
+
+Different projects can use different dotenv files with any name under the repo:
+
+- `.env` — default
+- `.env.<name>` — e.g. `.env.semi-m2f`, `.env.coco`
+- `envs/<name>.env` — e.g. `envs/other-project.env`
+
+Before packing secrets for a kernel, the agent calls `list_runtime_env_files` and **asks which file** when alternatives exist. Pack with:
+
+`runtime_env_dataset_push(env_file=".env.coco", overrides='{"WANDB_PROJECT":"other"}')`
+
+`overrides` is optional JSON; any non-host KEY=VALUE can be patched for that push only. Host-only keys (`KAGGLE_API_TOKEN`, etc.) are never packed into the Kaggle dataset.
 
 | Variable | How to get |
 |----------|------------|
@@ -37,8 +53,8 @@ Copy `.env.example` to `.env`. Never commit `.env` or `.secret/`.
 | `KAGGLE_API_TOKEN` | [Kaggle Settings → API](https://www.kaggle.com/settings) Bearer `KGAT_*` |
 | `WANDB_API_KEY` | [wandb.ai/authorize](https://wandb.ai/authorize) |
 | `WANDB_ENTITY` | First path segment of the project URL |
-| `WANDB_PROJECT` | Second path segment (e.g. `semi-mask2former`) |
-| `GITHUB_TOKEN` | Fine-grained **Contents: Read-only**, or classic **`repo` only** |
+| `WANDB_PROJECT` | Second path segment (e.g. `semi-mask2former`) — may differ per env file |
+| `GITHUB_TOKEN` | Fine-grained: repo access + **Contents: Read** (Metadata alone cannot clone). Classic: **`repo`** |
 | `GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON` | Path to SA JSON (this repo uses `.secret/*.json`) |
 | `GOOGLE_DRIVE_FOLDER_ID` | ID in `drive.google.com/drive/folders/<ID>` after sharing the folder with the SA **email** as Editor |
 

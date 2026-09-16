@@ -22,6 +22,7 @@ from aiaun_mcp.kaggle_ops import (
     kernel_push,
     kernel_status,
 )
+from aiaun_mcp.runtime_env import list_runtime_env_files as list_env_files_impl
 from aiaun_mcp.runtime_env import runtime_env_dataset_push as env_push_impl
 from aiaun_mcp.templates import (
     GENERATE_NOTEBOOK_PROMPT,
@@ -106,14 +107,48 @@ def kaggle_dataset_push(
 
 
 @app.tool()
-def runtime_env_dataset_push() -> str:
+def list_runtime_env_files() -> str:
     """
-    Pack WANDB_API_KEY, GITHUB_TOKEN, and Drive credentials from .env into a tiny
-    private Kaggle dataset (aiaun-run-env). Attach the returned dataset_slug to
-    kaggle_kernel_push so API auto-runs can authenticate without UI User Secrets.
+    List local dotenv files available to pack for Kaggle (paths only, never values).
+    Includes .env, .env.* (except .env.example), and envs/*.env.
+    If more than the default .env exists, ask the user which env_file to use.
     """
     try:
-        return _json(env_push_impl(get_settings()))
+        return _json(list_env_files_impl(get_settings().root))
+    except ConfigError as exc:
+        return _json({"ok": False, "error": str(exc)})
+
+
+@app.tool()
+def runtime_env_dataset_push(env_file: str = "", overrides: str = "") -> str:
+    """
+    Pack secrets into a private Kaggle dataset (aiaun-run-env) for API auto-runs.
+
+    env_file: optional path under repo root (e.g. .env.coco). Empty uses host .env defaults.
+    overrides: optional JSON object of KEY→VALUE patches applied after the file
+    (any non-host keys, e.g. {"WANDB_PROJECT":"other-proj"}).
+
+    Call list_runtime_env_files first; ask the user which file when alternatives exist.
+    Attach the returned dataset_slug to kaggle_kernel_push. Use response.effective
+    WANDB_* for wandb_run_lookup / experiment_tracking_links.
+    """
+    parsed_overrides: dict = {}
+    if overrides.strip():
+        try:
+            raw = _load_json_arg(overrides)
+        except Exception:
+            return _json({"ok": False, "error": "overrides must be a valid JSON object"})
+        if not isinstance(raw, dict):
+            return _json({"ok": False, "error": "overrides must be a JSON object"})
+        parsed_overrides = {str(k): str(v) for k, v in raw.items() if v is not None}
+    try:
+        return _json(
+            env_push_impl(
+                get_settings(),
+                env_file=env_file,
+                overrides=parsed_overrides or None,
+            )
+        )
     except ConfigError as exc:
         return _json({"ok": False, "error": str(exc)})
 
@@ -231,14 +266,27 @@ def classify_kernel_failure(log_text: str) -> str:
 
 
 @app.tool()
-def wandb_run_lookup(run_name: str = "", run_id: str = "") -> str:
+def wandb_run_lookup(
+    run_name: str = "",
+    run_id: str = "",
+    wandb_project: str = "",
+    wandb_entity: str = "",
+) -> str:
     """
-    Look up recent W&B runs for the configured entity/project. Fill
-    tracking.wandb_run after a kernel completes. Optionally filter by
-    run_name or run_id. Uses urllib only — no wandb SDK needed locally.
+    Look up recent W&B runs. Fill tracking.wandb_run after a kernel completes.
+    Optional wandb_project / wandb_entity override .env (use effective values from
+    runtime_env_dataset_push). Uses urllib only — no wandb SDK needed locally.
     """
     try:
-        return _json(wandb_lookup_impl(get_settings(), run_name=run_name, run_id=run_id))
+        return _json(
+            wandb_lookup_impl(
+                get_settings(),
+                run_name=run_name,
+                run_id=run_id,
+                wandb_project=wandb_project,
+                wandb_entity=wandb_entity,
+            )
+        )
     except ConfigError as exc:
         return _json({"ok": False, "error": str(exc)})
 
@@ -278,8 +326,11 @@ def experiment_tracking_links(
     dataset_slug: str = "",
     wandb_run_id: str = "",
     drive_file_id: str = "",
+    wandb_project: str = "",
+    wandb_entity: str = "",
 ) -> str:
-    """Return Kaggle / W&B / Drive URLs the user can open to track this experiment. Always show these links in the chat."""
+    """Return Kaggle / W&B / Drive URLs the user can open to track this experiment.
+    Optional wandb_project / wandb_entity override .env defaults. Always show these links."""
     settings = get_settings()
     return _json(
         {
@@ -289,6 +340,8 @@ def experiment_tracking_links(
                 dataset_slug=dataset_slug,
                 wandb_run_id=wandb_run_id,
                 drive_file_id=drive_file_id,
+                wandb_project=wandb_project,
+                wandb_entity=wandb_entity,
             ),
         }
     )

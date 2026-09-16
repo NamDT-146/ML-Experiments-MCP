@@ -37,9 +37,14 @@ def wandb_run_lookup(
     run_name: str = "",
     run_id: str = "",
     limit: int = 5,
+    wandb_project: str = "",
+    wandb_entity: str = "",
 ) -> dict:
     """
-    Look up recent W&B runs for settings.wandb_entity / settings.wandb_project.
+    Look up recent W&B runs for entity/project.
+
+    Defaults come from settings (.env). Optional wandb_project / wandb_entity
+    override those for multi-env / per-codebase packs.
 
     Optionally filter by run_name or run_id. Returns tracking URLs and summary metrics.
     Uses urllib only — no wandb package needed locally.
@@ -51,12 +56,12 @@ def wandb_run_lookup(
             "error": "WANDB_API_KEY not set in .env",
         }
 
-    entity = settings.wandb_entity_resolved
-    project = settings.wandb_project
+    entity = (wandb_entity or "").strip() or settings.wandb_entity_resolved
+    project = (wandb_project or "").strip() or settings.wandb_project
     if not entity or not project:
         return {
             "ok": False,
-            "error": "WANDB_ENTITY and WANDB_PROJECT must be set in .env",
+            "error": "WANDB_ENTITY and WANDB_PROJECT must be set (env file or tool args)",
         }
 
     try:
@@ -111,7 +116,15 @@ def wandb_run_lookup(
         "found": len(results),
         "runs": results,
         "wandb_project_url": f"https://wandb.ai/{entity}/{project}",
-        "tracking": settings.tracking_links(wandb_run_id=results[0]["id"]) if results else {},
+        "tracking": (
+            settings.tracking_links(
+                wandb_run_id=results[0]["id"],
+                wandb_project=project,
+                wandb_entity=entity,
+            )
+            if results
+            else {}
+        ),
     }
 
 

@@ -10,7 +10,8 @@ The agent should call `resolve_experiment_request`, then **ask** for anything mi
 
 - Inspect local data dir (count, bytes, samples)
 - Check / push Kaggle datasets (no AiAuN size cap; Kaggle API may still reject)
-- **Private runtime-env dataset** (`runtime_env_dataset_push`): packs WANDB/GITHUB/Drive keys from `.env` as a private dataset attached to the kernel — unblocks API auto-runs without UI User Secrets
+- **Private runtime-env dataset** (`runtime_env_dataset_push`): packs WANDB/GITHUB/Drive keys from a chosen dotenv file (default `.env`, or `.env.*` / `envs/*.env`) plus optional JSON `overrides` into a private dataset attached to the kernel — unblocks API auto-runs without UI User Secrets
+- **List env files** (`list_runtime_env_files`): paths only; ask the user which file when more than default `.env` exists
 - **Preflight check** (`preflight_experiment`): validates experiment fields, .env keys, and required file paths in attached datasets before push
 - Push Kaggle **script** kernels: `run_mode=auto|draft`, explicit `machine_shape` (T4/A100/etc.), slug resolved after push
 - Filtered log fetch: main `*.log` and `artifacts/*_train.log` first; no vendor tree download
@@ -46,22 +47,32 @@ training finishes, so the PC can stay off.
 | Tool | When |
 |------|------|
 | `resolve_experiment_request` | First; ask if `missing` is set |
+| `list_runtime_env_files` | Before pack; list dotenv paths; ask which if not default |
 | `preflight_experiment` | Before push; validates fields, keys, dataset paths |
-| `runtime_env_dataset_push` | Pack .env secrets into private Kaggle dataset for API auto-runs |
+| `runtime_env_dataset_push` | `env_file` + optional `overrides` JSON → private Kaggle env dataset |
 | `inspect_local_dir` | Local data path |
 | `list_repo_configs` | Ambiguous setting name |
 | `kaggle_dataset_check` | `owner/slug` or slug (owner from `.env`) |
 | `kaggle_dataset_push` | Only if missing; no AiAuN size cap |
 | `aiaun_smoke_script` | CPU color prototype smoke |
 | `aiaun_resnet50_gpu_smoke_script` | GPU ResNet50 smoke (T4) |
-| `experiment_tracking_links` | Kaggle + W&B + Drive URLs to show the user |
+| `experiment_tracking_links` | Kaggle + W&B + Drive URLs; optional `wandb_project` / `wandb_entity` |
 | `kaggle_kernel_push` | `run_mode`, `machine_shape`, `dataset_slugs` incl. env pack |
 | `kaggle_kernel_status` | Poll; returns RUNNING / COMPLETE / ERROR |
 | `kaggle_kernel_logs` | Filtered logs (main + artifacts); after COMPLETE preferred |
 | `classify_kernel_failure` | Paste log text; returns error class + remediation |
-| `wandb_run_lookup` | Fill `tracking.wandb_run` after COMPLETE |
+| `wandb_run_lookup` | Fill `tracking.wandb_run` after COMPLETE; pass effective WANDB_* |
 | `kaggle_kernel_output_to_drive` | Host-side backup; call only when user accepts |
 | `drive_folder_info` / `drive_upload_file` | Local SA; Shared Drive |
+
+### Multi-env pack example
+
+```text
+list_runtime_env_files
+→ ask user: .env vs .env.coco
+runtime_env_dataset_push(env_file=".env.coco", overrides="{\"WANDB_PROJECT\":\"coco-runs\"}")
+→ attach dataset_slug + use response.effective for tracking / wandb_run_lookup
+```
 
 Prompts: `run_kaggle_experiment`, `generate_experiment_notebook`.
 

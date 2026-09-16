@@ -158,6 +158,21 @@ def test_tracking_links(monkeypatch, tmp_path):
     assert "fileid" in t["drive_file"]
 
 
+def test_tracking_links_wandb_override(monkeypatch, tmp_path):
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+    (tmp_path / "docs").mkdir()
+    monkeypatch.setenv("KAGGLE_USERNAME", "namdtgk14")
+    monkeypatch.setenv("WANDB_ENTITY", "my-entity")
+    monkeypatch.setenv("WANDB_PROJECT", "semi-mask2former")
+    t = get_settings(tmp_path).tracking_links(
+        wandb_entity="other-team",
+        wandb_project="other-proj",
+        wandb_run_id="r1",
+    )
+    assert t["wandb_project"] == "https://wandb.ai/other-team/other-proj"
+    assert t["wandb_run"] == "https://wandb.ai/other-team/other-proj/runs/r1"
+
+
 def test_list_repo_configs():
     from aiaun_mcp.config import repo_root
 

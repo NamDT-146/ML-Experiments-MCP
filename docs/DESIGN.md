@@ -18,16 +18,18 @@ Personal vs org is **env-only**: `AIAUN_OWNER_MODE=personal|org` selects `KAGGLE
 
 | Key | Where | Role |
 |-----|--------|------|
-| `KAGGLE_USERNAME` + `KAGGLE_API_TOKEN` | Local `.env` | Dataset/kernel API (Bearer `KGAT_*`; `KAGGLE_KEY` fallback) |
-| `GITHUB_TOKEN` | Local `.env` and Kaggle User Secrets | Local optional; **kernel clone** must use Secrets |
-| `WANDB_API_KEY` + entity/project | Local `.env` and Kaggle User Secrets | Kernel logging |
-| `GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON` + `GOOGLE_DRIVE_FOLDER_ID` | Local `.env` **and** Kaggle User Secrets | Login-less. Kernel uploads `/kaggle/working/artifacts` using `from_service_account_info`. Folder **must** be a Shared Drive (SA has no My Drive quota). Never put the JSON in kernel source. |
+| `KAGGLE_USERNAME` + `KAGGLE_API_TOKEN` | Local default `.env` (host only) | Dataset/kernel API (Bearer `KGAT_*`; `KAGGLE_KEY` fallback) |
+| `GITHUB_TOKEN` | Local dotenv + kernel pack / User Secrets | Private clone needs fine-grained **Contents: Read** (or classic `repo`) |
+| `WANDB_API_KEY` + entity/project | Local dotenv + kernel pack / User Secrets | Kernel logging; project may differ per env file |
+| `GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON` + `GOOGLE_DRIVE_FOLDER_ID` | Local dotenv + kernel pack / User Secrets | Login-less. Kernel uploads `/kaggle/working/artifacts` using `from_service_account_info`. Folder **must** be a Shared Drive (SA has no My Drive quota). Never put the JSON in kernel source. |
+
+**Multi-env kernel pack:** Host MCP always boots from default `.env`. For Kaggle API auto-runs, `list_runtime_env_files` + `runtime_env_dataset_push(env_file, overrides)` packs a chosen dotenv (`.env`, `.env.*`, or `envs/*.env`) plus optional JSON key overrides into private dataset `{owner}/aiaun-run-env`. Host-only keys (`KAGGLE_*`, `AIAUN_*`) are never packed. Precedence: overrides > selected file > host defaults.
 
 The server redacts known secret values from error strings. Kernel `script_content` that looks like it contains tokens is refused.
 
 ## MCP surface
 
-**Tools:** … `experiment_tracking_links` (Kaggle + W&B + Drive URLs). Kernel/status/Drive tools include a `tracking` object; the agent must show those links to the user.
+**Tools:** … `list_runtime_env_files`, `runtime_env_dataset_push`, `experiment_tracking_links` (optional `wandb_project` / `wandb_entity`), `wandb_run_lookup`. Kernel/status/Drive tools include a `tracking` object; the agent must show those links to the user.
 
 **Prompts:** `run_kaggle_experiment`, `generate_experiment_notebook`.
 
@@ -38,9 +40,10 @@ The server redacts known secret values from error strings. Kernel `script_conten
 1. User asks to run a setting on Kaggle.
 2. Agent resolves fields; **asks** if data dir, code version, or config is missing. Lists YAML candidates when ambiguous.
 3. Inspect local dir; `kaggle_dataset_check`; upload only if absent (Kaggle/Drive APIs enforce their own limits).
-4. Generate script: Kaggle Secrets for git/W&B; or smoke script with no clone.
-5. `kaggle_kernel_push` (internet; GPU only when requested).
-6. Poll status/logs. Kernel should push artifacts to Drive via User Secrets. MCP backup: `kaggle_kernel_output_to_drive` (SSH, no browser).
-7. If status=ERROR and failureMessage=null: call `classify_kernel_failure` on log text.
-8. After COMPLETE: `wandb_run_lookup` fills `tracking.wandb_run`.
-9. **Known gap:** Kaggle→Drive from the kernel may still hit `ConnectionError`; host backup (`kaggle_kernel_output_to_drive`) is the verified path.
+4. `list_runtime_env_files`; **ask which env file** when alternatives exist; `runtime_env_dataset_push(env_file, overrides)`; attach slug to the kernel.
+5. Generate script: env pack / Kaggle Secrets for git/W&B; or smoke script with no clone.
+6. `kaggle_kernel_push` (internet; GPU only when requested; `machine_shape` for T4/A100).
+7. Poll status/logs. Kernel should push artifacts to Drive via env-loaded credentials. MCP backup: `kaggle_kernel_output_to_drive` (SSH, no browser).
+8. If status=ERROR and failureMessage=null: call `classify_kernel_failure` on log text.
+9. After COMPLETE: `wandb_run_lookup` with effective WANDB_* fills `tracking.wandb_run`.
+10. **Known gap:** Kaggle→Drive from the kernel may still hit `ConnectionError`; host backup (`kaggle_kernel_output_to_drive`) is the verified path.

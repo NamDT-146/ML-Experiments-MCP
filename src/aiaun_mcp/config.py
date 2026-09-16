@@ -113,8 +113,13 @@ class Settings:
         drive_file_id: str = "",
         wandb_run_id: str = "",
         experiment_folder_id: str = "",
+        wandb_project: str = "",
+        wandb_entity: str = "",
     ) -> dict:
-        """URLs the user can open: Kaggle run, W&B project/run, Drive folder/file."""
+        """URLs the user can open: Kaggle run, W&B project/run, Drive folder/file.
+
+        Optional wandb_project / wandb_entity override .env defaults for this call.
+        """
         kaggle_kernel = ""
         if kernel_slug:
             if "/" not in kernel_slug:
@@ -125,14 +130,14 @@ class Settings:
             if "/" not in dataset_slug:
                 dataset_slug = f"{self.kaggle_owner}/{dataset_slug}"
             kaggle_dataset = f"https://www.kaggle.com/datasets/{dataset_slug}"
-        entity = self.wandb_entity_resolved
-        project = self.wandb_project
-        wandb_project = ""
+        entity = (wandb_entity or "").strip() or self.wandb_entity_resolved
+        project = (wandb_project or "").strip() or self.wandb_project
+        wandb_project_url = ""
         wandb_run = ""
         if entity and project:
-            wandb_project = f"https://wandb.ai/{entity}/{project}"
+            wandb_project_url = f"https://wandb.ai/{entity}/{project}"
             if wandb_run_id:
-                wandb_run = f"{wandb_project}/runs/{wandb_run_id}"
+                wandb_run = f"{wandb_project_url}/runs/{wandb_run_id}"
         drive_folder = ""
         folder_id = experiment_folder_id or self.drive_folder_id
         if folder_id:
@@ -144,7 +149,7 @@ class Settings:
             "kaggle_kernel": kaggle_kernel,
             "kaggle_kernel_versions": f"{kaggle_kernel}?scriptVersionId=latest" if kaggle_kernel else "",
             "kaggle_dataset": kaggle_dataset,
-            "wandb_project": wandb_project,
+            "wandb_project": wandb_project_url,
             "wandb_run": wandb_run,
             "drive_folder": drive_folder,
             "drive_file": drive_file,
